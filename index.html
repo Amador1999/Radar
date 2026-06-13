@@ -6,62 +6,42 @@
     <title>MagClonk® LIVE Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; display: flex; height: 100vh; background: #f4f4f4; color: #333; overflow: hidden; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; display: flex; height: 100vh; background: #fff; overflow: hidden; }
         
-        /* Sidebar SUBȚIRE */
+        /* SIDEBAR SUBȚIRE PE DESKTOP (200px) */
         #sidebar { 
-            width: 220px; 
+            width: 200px; 
             background: #fff; 
             border-right: 2px solid #d4af37; 
             display: flex; 
             flex-direction: column; 
             z-index: 1000; 
-            box-shadow: 5px 0 15px rgba(0,0,0,0.1); 
+            box-shadow: 5px 0 10px rgba(0,0,0,0.1); 
         }
 
-        #sidebar-header { 
-            padding: 15px 10px; 
-            background: #000; 
-            border-bottom: 2px solid #d4af37; 
-            text-align: center; 
-        }
-
-        #sidebar-header h1 { 
-            color: #d4af37; 
-            margin: 0; 
-            font-size: 18px; 
-            text-transform: uppercase; 
-            letter-spacing: 2px; 
-        }
-
-        #status-bar { font-size: 9px; margin-top: 8px; color: #aaa; text-transform: uppercase; }
+        #sidebar-header { padding: 12px 5px; background: #000; text-align: center; border-bottom: 2px solid #d4af37; }
+        #sidebar-header h1 { color: #d4af37; margin: 0; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
         
-        #device-list { flex: 1; overflow-y: auto; padding: 10px; }
-
+        #device-list { flex: 1; overflow-y: auto; padding: 8px; background: #fff; }
         .device-item { 
-            background: #f9f9f9; 
-            margin-bottom: 8px; 
-            padding: 10px; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            border: 1px solid #ddd; 
-            transition: 0.2s;
+            background: #f4f4f4; margin-bottom: 5px; padding: 8px; border-radius: 4px; 
+            cursor: pointer; border: 1px solid #ddd; transition: 0.2s;
         }
+        .device-item.active { background: #d4af37 !important; color: #000; font-weight: bold; border-color: #000; }
+        .device-mac { font-family: monospace; font-size: 10px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .device-meta { font-size: 9px; opacity: 0.7; margin-top: 3px; }
 
-        .device-item:hover { border-color: #d4af37; background: #fff; }
-        .device-item.active { background: #d4af37; color: black; border-color: #000; font-weight: bold; }
-        
-        .device-mac { font-family: monospace; font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; }
-        .device-meta { font-size: 10px; margin-top: 3px; opacity: 0.7; }
+        #map { flex: 1; }
 
-        #map { flex: 1; background: #e5e3df; }
-
-        /* Adaptare specială pentru Mobil/iPhone */
+        /* AJUSTĂRI AGRESIVE PENTRU IPHONE / MOBIL */
         @media (max-width: 600px) {
-            #sidebar { width: 130px; } 
-            #sidebar-header h1 { font-size: 13px; letter-spacing: 1px; }
-            .device-mac { font-size: 9px; }
-            .device-meta { display: none; }
+            #sidebar { width: 90px !important; } /* FOARTE ÎNGUST PE TELEFON */
+            #sidebar-header { padding: 8px 2px; }
+            #sidebar-header h1 { font-size: 10px !important; letter-spacing: 0px; }
+            .device-mac { font-size: 8px !important; }
+            .device-meta { display: none !important; } /* ASCUNDEM ORELE PE MOBIL */
+            .device-item { padding: 5px 2px !important; margin-bottom: 3px; }
+            .leaflet-control-zoom { display: none; } /* SCOATEM BUTOANELE +/- PE MOBIL */
         }
     </style>
 </head>
@@ -70,10 +50,10 @@
 <div id="sidebar">
     <div id="sidebar-header">
         <h1>MagClonk®</h1>
-        <div id="status-bar">Conectare...</div>
+        <div id="status" style="font-size: 7px; color: #0f0; margin-top: 3px;">LIVE ●</div>
     </div>
     <div id="device-list">
-        <p style="text-align: center; color: #999; font-size: 10px; margin-top: 30px;">Se încarcă flota...</p>
+        <p style="text-align: center; color: #999; font-size: 9px;">...</p>
     </div>
 </div>
 
@@ -85,7 +65,6 @@
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import * as L from "https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js";
 
-    // Configurația ta Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyC-fJK7QwOZqwSNwXZQ-Gs3MWBRAJM_Uo8",
         authDomain: "magclonk-new.firebaseapp.com",
@@ -100,24 +79,16 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     
-    // Inițializare hartă (Zoom-ul în dreapta jos ca să nu încurce pe mobil)
+    // Harta (Zoom control jos-dreapta)
     const map = L.map('map', { zoomControl: false }).setView([45.9432, 24.9668], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const markers = {};
-    const statusBox = document.getElementById('status-bar');
     const listContainer = document.getElementById('device-list');
 
-    // Autentificare anonimă pentru a trece de regulile Firebase
     signInAnonymously(auth).then(() => {
-        statusBox.innerHTML = "Sistem Online ●";
-        statusBox.style.color = "#0f0";
-
-        // Ascultare date dispozitive
         onValue(ref(db, 'devices'), (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
@@ -133,8 +104,7 @@
                     if (markers[mac]) {
                         markers[mac].setLatLng([lat, lng]);
                     } else {
-                        markers[mac] = L.marker([lat, lng]).addTo(map)
-                            .bindPopup(`<b>MAC:</b> ${mac}<br><b>Utilizare:</b> ${hours}h`);
+                        markers[mac] = L.marker([lat, lng]).addTo(map).bindPopup(`MAC: ${mac}<br>Ore: ${hours}h`);
                     }
 
                     const item = document.createElement('div');
@@ -143,16 +113,13 @@
                     item.onclick = () => {
                         document.querySelectorAll('.device-item').forEach(el => el.classList.remove('active'));
                         item.classList.add('active');
-                        map.flyTo([lat, lng], 14, { duration: 1.5 });
+                        map.flyTo([lat, lng], 14);
                         markers[mac].openPopup();
                     };
                     listContainer.appendChild(item);
                 }
             });
         });
-    }).catch(err => {
-        statusBox.innerHTML = "Eroare Securitate";
-        statusBox.style.color = "red";
     });
 </script>
 </body>
