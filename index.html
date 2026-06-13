@@ -2,26 +2,67 @@
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MagClonk® LIVE Radar - Harta Normală</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>MagClonk® LIVE Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; display: flex; height: 100vh; background: #f4f4f4; color: #333; overflow: hidden; }
         
-        /* Sidebar Alb/Gri pentru contrast cu harta colorată */
-        #sidebar { width: 330px; background: #fff; border-right: 2px solid #d4af37; display: flex; flex-direction: column; z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.1); }
-        #sidebar-header { padding: 30px 15px; background: #000; border-bottom: 2px solid #d4af37; text-align: center; }
-        #sidebar-header h1 { color: #d4af37; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 4px; font-weight: 900; }
-        #status-bar { font-size: 10px; margin-top: 15px; padding: 5px; border-radius: 4px; background: #222; color: #aaa; border: 1px solid #333; }
+        /* Sidebar SUBȚIRE */
+        #sidebar { 
+            width: 220px; 
+            background: #fff; 
+            border-right: 2px solid #d4af37; 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 1000; 
+            box-shadow: 5px 0 15px rgba(0,0,0,0.1); 
+        }
+
+        #sidebar-header { 
+            padding: 15px 10px; 
+            background: #000; 
+            border-bottom: 2px solid #d4af37; 
+            text-align: center; 
+        }
+
+        #sidebar-header h1 { 
+            color: #d4af37; 
+            margin: 0; 
+            font-size: 18px; 
+            text-transform: uppercase; 
+            letter-spacing: 2px; 
+        }
+
+        #status-bar { font-size: 9px; margin-top: 8px; color: #aaa; text-transform: uppercase; }
         
-        #device-list { flex: 1; overflow-y: auto; padding: 15px; }
-        .device-item { background: #f9f9f9; margin-bottom: 12px; padding: 15px; border-radius: 8px; cursor: pointer; border: 1px solid #ddd; transition: 0.2s; color: #333; }
+        #device-list { flex: 1; overflow-y: auto; padding: 10px; }
+
+        .device-item { 
+            background: #f9f9f9; 
+            margin-bottom: 8px; 
+            padding: 10px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            border: 1px solid #ddd; 
+            transition: 0.2s;
+        }
+
         .device-item:hover { border-color: #d4af37; background: #fff; }
         .device-item.active { background: #d4af37; color: black; border-color: #000; font-weight: bold; }
-        .device-mac { font-family: 'Courier New', monospace; font-size: 14px; display: block; }
-        .device-meta { font-size: 11px; margin-top: 5px; opacity: 0.8; }
+        
+        .device-mac { font-family: monospace; font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; }
+        .device-meta { font-size: 10px; margin-top: 3px; opacity: 0.7; }
 
         #map { flex: 1; background: #e5e3df; }
+
+        /* Adaptare specială pentru Mobil/iPhone */
+        @media (max-width: 600px) {
+            #sidebar { width: 130px; } 
+            #sidebar-header h1 { font-size: 13px; letter-spacing: 1px; }
+            .device-mac { font-size: 9px; }
+            .device-meta { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -29,10 +70,10 @@
 <div id="sidebar">
     <div id="sidebar-header">
         <h1>MagClonk®</h1>
-        <div id="status-bar">Inițializare...</div>
+        <div id="status-bar">Conectare...</div>
     </div>
     <div id="device-list">
-        <p style="text-align: center; color: #999; margin-top: 50px;">Se încarcă harta...</p>
+        <p style="text-align: center; color: #999; font-size: 10px; margin-top: 30px;">Se încarcă flota...</p>
     </div>
 </div>
 
@@ -44,6 +85,7 @@
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import * as L from "https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js";
 
+    // Configurația ta Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyC-fJK7QwOZqwSNwXZQ-Gs3MWBRAJM_Uo8",
         authDomain: "magclonk-new.firebaseapp.com",
@@ -58,20 +100,24 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     
-    // Inițializare Hartă Normală (OpenStreetMap)
-    const map = L.map('map').setView([45.9432, 24.9668], 6);
+    // Inițializare hartă (Zoom-ul în dreapta jos ca să nu încurce pe mobil)
+    const map = L.map('map', { zoomControl: false }).setView([45.9432, 24.9668], 6);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap Contributors'
+        attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
     const markers = {};
     const statusBox = document.getElementById('status-bar');
     const listContainer = document.getElementById('device-list');
 
+    // Autentificare anonimă pentru a trece de regulile Firebase
     signInAnonymously(auth).then(() => {
-        statusBox.innerHTML = "STATUS: CONECTAT ●";
+        statusBox.innerHTML = "Sistem Online ●";
         statusBox.style.color = "#0f0";
 
+        // Ascultare date dispozitive
         onValue(ref(db, 'devices'), (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
@@ -88,22 +134,25 @@
                         markers[mac].setLatLng([lat, lng]);
                     } else {
                         markers[mac] = L.marker([lat, lng]).addTo(map)
-                            .bindPopup(`<b>Dispozitiv MagClonk</b><br>MAC: ${mac}<br>Utilizare: ${hours}h`);
+                            .bindPopup(`<b>MAC:</b> ${mac}<br><b>Utilizare:</b> ${hours}h`);
                     }
 
                     const item = document.createElement('div');
                     item.className = 'device-item';
-                    item.innerHTML = `<span class="device-mac">${mac}</span><div class="device-meta">📍 ${lat.toFixed(3)}, ${lng.toFixed(3)} | 🕒 ${hours}h</div>`;
+                    item.innerHTML = `<span class="device-mac">${mac}</span><div class="device-meta">🕒 ${hours}h</div>`;
                     item.onclick = () => {
                         document.querySelectorAll('.device-item').forEach(el => el.classList.remove('active'));
                         item.classList.add('active');
-                        map.flyTo([lat, lng], 13);
+                        map.flyTo([lat, lng], 14, { duration: 1.5 });
                         markers[mac].openPopup();
                     };
                     listContainer.appendChild(item);
                 }
             });
         });
+    }).catch(err => {
+        statusBox.innerHTML = "Eroare Securitate";
+        statusBox.style.color = "red";
     });
 </script>
 </body>
