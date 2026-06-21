@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MagClonk® Daily Hotspot Radar</title>
+    <title>MagClonk® Command Radar v5</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
@@ -12,27 +12,28 @@
         #sidebar { width: 180px; background: rgba(0,0,0,0.9); border-right: 2px solid #d4af37; display: flex; flex-direction: column; z-index: 1000; }
         #sidebar-header { padding: 12px 5px; background: #000; text-align: center; border-bottom: 2px solid #d4af37; }
         #sidebar-header h1 { color: #d4af37; margin: 0; font-size: 14px; text-transform: uppercase; }
+        #mode-switch { background: #1a1a1a; margin: 10px; padding: 10px; border-radius: 4px; border: 1px solid #d4af37; color: #fff; font-size: 9px; cursor: pointer; text-align: center; font-weight: bold; }
+        .all-mode { background: #004d00 !important; border-color: #0f0 !important; }
+        .selected-mode { background: #4d0000 !important; border-color: #f00 !important; }
         #device-list { flex: 1; overflow-y: auto; padding: 8px; }
         .device-item { background: #1a1a1a; margin-bottom: 5px; padding: 10px; border-radius: 4px; cursor: pointer; border: 1px solid #333; color: #fff; font-size: 10px; text-align: center; }
         .device-item.active { background: #d4af37 !important; color: #000; font-weight: bold; }
         #map { flex: 1; background: #000; }
         .marker-cluster div { background-color: rgba(212, 175, 55, 1) !important; color: #000 !important; font-weight: bold !important; }
-        @media (max-width: 600px) { #sidebar { width: 100px; } }
     </style>
 </head>
 <body>
 <div id="sidebar">
-    <div id="sidebar-header"><h1>MagClonk®</h1><div style="font-size: 7px; color: #0f0;">DAILY RADAR ●</div></div>
+    <div id="sidebar-header"><h1>MagClonk®</h1></div>
+    <div id="mode-switch" class="all-mode" onclick="toggleViewMode()">VIEW: ALL DEVICES</div>
     <div id="device-list"></div>
 </div>
 <div id="map"></div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-
 <script>
     const firebaseConfig = {
         apiKey: "AIzaSyC-fJK7QwOZqwSNwXZQ-Gs3MWBRAJM_Uo8",
@@ -43,58 +44,60 @@
         messagingSenderId: "545285788202",
         appId: "1:545285788202:web:26eed29ddff91f5c9ae953"
     };
-
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
     const map = L.map('map', { zoomControl: false }).setView([45.2, 29.3], 8);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', { pane: 'shadowPane' }).addTo(map);
+    let currentClusterLayer = L.markerClusterGroup({ maxClusterRadius: 40 });
+    map.addLayer(currentClusterLayer);
+    let viewMode = "ALL"; let selectedMAC = null; let allData = {};
 
-    let currentClusterLayer = null;
+    function toggleViewMode() {
+        const btn = document.getElementById('mode-switch');
+        if (viewMode === "ALL") { viewMode = "SELECTED"; btn.innerText = "VIEW: SELECTED ONLY"; btn.className = "selected-mode"; } 
+        else { viewMode = "ALL"; btn.innerText = "VIEW: ALL DEVICES"; btn.className = "all-mode"; }
+        renderMap();
+    }
+
+    async function renderMap() {
+        currentClusterLayer.clearLayers();
+        if (viewMode === "ALL") {
+            Object.keys(allData).forEach(mac => {
+                const dev = allData[mac];
+                if (dev.lat && dev.lng) {
+                    const marker = L.marker([dev.lat, dev.lng]).bindPopup(`<b>MAC:</b> ${mac}`);
+                    currentClusterLayer.addLayer(marker);
+                }
+            });
+        } else if (viewMode === "SELECTED" && selectedMAC) {
+            const snap = await db.ref('devices/' + selectedMAC + '/gps_history').get();
+            if (snap.exists()) {
+                Object.values(snap.val()).forEach(p => {
+                    if (p.lat) {
+                        const marker = L.marker([p.lat, p.lng]).bindPopup(`<b>Date:</b> ${new Date(p.timestamp).toLocaleDateString()}`);
+                        currentClusterLayer.addLayer(marker);
+                    }
+                });
+            }
+        }
+    }
 
     firebase.auth().signInAnonymously().then(() => {
         db.ref('devices').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (!data) return;
-            const list = document.getElementById('device-list');
-            list.innerHTML = "";
-            Object.keys(data).forEach(mac => {
+            allData = snapshot.val() || {};
+            const list = document.getElementById('device-list'); list.innerHTML = "";
+            Object.keys(allData).forEach(mac => {
                 const item = document.createElement('div');
-                item.className = 'device-item';
+                item.className = 'device-item' + (selectedMAC === mac ? ' active' : '');
                 item.innerText = mac;
                 item.onclick = function() {
-                    document.querySelectorAll('.device-item').forEach(el => el.classList.remove('active'));
-                    item.classList.add('active');
-                    if (currentClusterLayer) map.removeLayer(currentClusterLayer);
-                    currentClusterLayer = L.markerClusterGroup({ maxClusterRadius: 40 });
-
-                    db.ref('devices/' + mac + '/gps_history').get().then((historySnap) => {
-                        if (historySnap.exists()) {
-                            const points = historySnap.val();
-                            let lastPos = null;
-                            const dailyFilter = new Set(); // Set pentru a tine minte combinatia Locatie + Zi
-
-                            Object.values(points).forEach(p => {
-                                if (p.lat && p.lng) {
-                                    // Cream o cheie unica: Coordonate rotunjite + Ziua
-                                    const day = new Date(p.timestamp).toISOString().split('T')[0];
-                                    const locKey = `${p.lat.toFixed(4)}_${p.lng.toFixed(4)}_${day}`;
-                                    
-                                    if (!dailyFilter.has(locKey)) {
-                                        dailyFilter.add(locKey);
-                                        const marker = L.marker([p.lat, p.lng]).bindPopup(`MAC: ${mac}<br>Ziua: ${day}`);
-                                        currentClusterLayer.addLayer(marker);
-                                        lastPos = [p.lat, p.lng];
-                                    }
-                                }
-                            });
-                            map.addLayer(currentClusterLayer);
-                            if (lastPos) map.flyTo(lastPos, 14);
-                        }
-                    });
+                    selectedMAC = mac; renderMap();
+                    if (allData[mac].lat) map.flyTo([allData[mac].lat, allData[mac].lng], 14);
                 };
                 list.appendChild(item);
             });
+            if (viewMode === "ALL") renderMap();
         });
     });
 </script>
